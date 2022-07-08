@@ -1362,7 +1362,7 @@ class MessagingManager @Inject constructor(
         val newHeight = 480 * width / height
         val newWidth = 480
         ByteArrayOutputStream Bitmap = new ByteArrayOutputStream();
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 40, Bitmap);
+        bitmap.compress(Bitmap.CompressFormat(JPEG, 40, Bitmap));
 		return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
     }
 
