@@ -1363,9 +1363,6 @@ class MessagingManager @Inject constructor(
         val newWidth = 480
         return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
     }
-	
-	private boolean compress (Bitmap.CompressFormat jpeg, 70, Bitmap)
-	private static Bitmap decodeStream (Bitmap)
 
     private fun handleVisibility(
         builder: NotificationCompat.Builder,
