@@ -77,13 +77,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.net.URL
 import java.net.URLDecoder
 import java.util.Locale
 import javax.inject.Inject
 import io.homeassistant.companion.android.common.R as commonR
-
-import java.io.ByteArrayOutputStream
 
 class MessagingManager @Inject constructor(
     @ApplicationContext val context: Context,
