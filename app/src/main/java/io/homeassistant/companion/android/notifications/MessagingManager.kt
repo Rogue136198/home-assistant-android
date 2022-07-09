@@ -84,9 +84,6 @@ import javax.inject.Inject
 import io.homeassistant.companion.android.common.R as commonR
 
 import java.io.ByteArrayOutputStream
-import java.io.File
-import android.os.Environment
-
 
 class MessagingManager @Inject constructor(
     @ApplicationContext val context: Context,
