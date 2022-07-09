@@ -1368,7 +1368,7 @@ class MessagingManager @Inject constructor(
 
     private fun bitmapToJPEG(bitmap: Bitmap): Bitmap? {
         val baos = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, baos)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 50, baos)
         val bitmapdata = baos.toByteArray()
         return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
     }
