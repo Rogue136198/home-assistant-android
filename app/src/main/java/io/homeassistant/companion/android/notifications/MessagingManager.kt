@@ -1370,8 +1370,6 @@ class MessagingManager @Inject constructor(
         val byteArray = stream.toByteArray()
         return BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
     }
-	
-	compressBitmap(Bitmap, 80)
 
     private fun handleVisibility(
         builder: NotificationCompat.Builder,
