@@ -1361,8 +1361,17 @@ class MessagingManager @Inject constructor(
     private fun Bitmap.getCompressedFrame(): Bitmap? {
         val newHeight = 480 * width / height
         val newWidth = 480
-        return Bitmap.createScaledBitmap(this, newWidth, newHeight, false).compress(Bitmap.CompressFormat.PNG,100,this)
+        return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
     }
+	
+    private fun compressBitmap(bitmap: Bitmap, quality: Int): Bitmap {
+        val stream = ByteArrayOutputStream()
+        Bitmap.compress(Bitmap.CompressFormat.WEBP, quality, stream)
+        val byteArray = stream.toByteArray()
+        return BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
+    }
+	
+	compressBitmap(Bitmap, 80)
 
     private fun handleVisibility(
         builder: NotificationCompat.Builder,
