@@ -1362,13 +1362,10 @@ class MessagingManager @Inject constructor(
     private fun Bitmap.getCompressedFrame(): Bitmap? {
         val newHeight = 480 / width * height
         val newWidth = 480
-        return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
-    }
-
-    private fun bitmapToJPEG(bitmap: Bitmap): Bitmap? {
-        val bos = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 0, bos)
-        val bitmapdata = bos.toByteArray()
+        Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
+        val baos = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.PNG, 0, baos)
+        val bitmapdata = baos.toByteArray()
         return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
     }
 
