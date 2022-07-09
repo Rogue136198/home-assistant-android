@@ -244,7 +244,7 @@ class MessagingManager @Inject constructor(
 
         // Video Values
         const val VIDEO_START_MICROSECONDS = 100000L
-        const val VIDEO_INCREMENT_MICROSECONDS = 500000L
+        const val VIDEO_INCREMENT_MICROSECONDS = 1000000L
         const val VIDEO_GUESS_MILLISECONDS = 7000L
     }
 
@@ -1339,7 +1339,7 @@ class MessagingManager @Inject constructor(
                     // Start at 100 milliseconds and get frames every 1 second until reaching the end
                     run frameLoop@{
                         for (timeInMicroSeconds in VIDEO_START_MICROSECONDS until durationInMicroSeconds step VIDEO_INCREMENT_MICROSECONDS) {
-                            if (processingFrames.size >= 8) {
+                            if (processingFrames.size >= 6) {
                                 return@frameLoop
                             }
 
