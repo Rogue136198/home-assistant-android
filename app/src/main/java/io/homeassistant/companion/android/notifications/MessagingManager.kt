@@ -1369,16 +1369,16 @@ class MessagingManager @Inject constructor(
         return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
     }
 
-    private fun bitmapToJPEG(bitmap: Bitmap, fileNameToSave: String): File? { // File name like "image.png"
-        var file: File? = null
-		file = File(Environment.getExternalStorageDirectory().toString() + File.separator + fileNameToSave)
+    private fun bitmapToJPEG(bitmap: Bitmap, fileNameToSave: String): Bitmap? { // File name like "image.png"
+        var file: Bitmap? = null
+        file = File(Environment.getExternalStorageDirectory().toString() + File.separator + fileNameToSave)
         file.createNewFile()
-        
+
         // Convert bitmap to byte array
         val bos = ByteArrayOutputStream()
         bitmap.compress(Bitmap.CompressFormat.PNG, 0, bos) // YOU can also save it in JPEG
         val bitmapdata = bos.toByteArray()
-        
+
         return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
     }
 
