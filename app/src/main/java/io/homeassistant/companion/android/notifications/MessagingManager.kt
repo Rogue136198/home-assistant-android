@@ -1360,18 +1360,15 @@ class MessagingManager @Inject constructor(
         }
 
     private fun Bitmap.getCompressedFrame(): Bitmap? {
-        val newHeight = 480 * width / height
+        val newHeight = 480 / width * height
         val newWidth = 480
         return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
     }
 
     private fun bitmapToJPEG(bitmap: Bitmap): Bitmap? {
-
-        // Convert bitmap to byte array
         val bos = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.PNG, 0, bos) // YOU can also save it in JPEG
+        bitmap.compress(Bitmap.CompressFormat.PNG, 0, bos)
         val bitmapdata = bos.toByteArray()
-
         return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
     }
 
