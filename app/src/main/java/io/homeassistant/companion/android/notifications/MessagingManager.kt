@@ -84,6 +84,9 @@ import javax.inject.Inject
 import io.homeassistant.companion.android.common.R as commonR
 
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
+import android.os.Environment
 
 
 class MessagingManager @Inject constructor(
@@ -1374,12 +1377,12 @@ class MessagingManager @Inject constructor(
             file = File(Environment.getExternalStorageDirectory().toString() + File.separator + fileNameToSave)
             file.createNewFile()
 
-            //Convert bitmap to byte array
+            // Convert bitmap to byte array
             val bos = ByteArrayOutputStream()
             bitmap.compress(Bitmap.CompressFormat.PNG, 0, bos) // YOU can also save it in JPEG
             val bitmapdata = bos.toByteArray()
 
-            //write the bytes in file
+            // write the bytes in file
             val fos = FileOutputStream(file)
             fos.write(bitmapdata)
             fos.flush()
