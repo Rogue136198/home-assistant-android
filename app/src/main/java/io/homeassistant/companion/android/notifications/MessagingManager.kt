@@ -1365,7 +1365,10 @@ class MessagingManager @Inject constructor(
     }
 
     private fun Bitmap.getCompressedJPEG(): Bitmap? {
-        return bitmap.compress(CompressFormat.JPEG, 100, outputStream)
+        Bitmap bmp = null;
+        ByteArrayOutputStream stream = new ByteArrayOutputStream();
+        bmp.compress(Bitmap.CompressFormat.JPEG, 100, stream);
+        byte[] byteArray = stream.toByteArray();
     }
 
     private fun handleVisibility(
