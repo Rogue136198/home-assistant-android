@@ -77,7 +77,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.net.URL
 import java.net.URLDecoder
 import java.util.Locale
@@ -1364,9 +1363,8 @@ class MessagingManager @Inject constructor(
         val newHeight = 480 / ratio
         val newWidth = 480
         val scaledBitmap = Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
-        val baos = ByteArrayOutputStream()
-        scaledBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 0, baos)
-        val bitmapdata = baos.toByteArray()
+        compressedBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 0, scaledBitmap)
+        val bitmapdata = compressedBitmap.toByteArray()
         return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
     }
 
