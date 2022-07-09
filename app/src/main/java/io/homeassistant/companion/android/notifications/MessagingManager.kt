@@ -1370,13 +1370,6 @@ class MessagingManager @Inject constructor(
         return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
     }
 
-    private fun bitmapToJPEG(bitmap: Bitmap): Bitmap? {
-        val baos = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 0, baos)
-        val bitmapdata = baos.toByteArray()
-        return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
-    }
-
     private fun handleVisibility(
         builder: NotificationCompat.Builder,
         data: Map<String, String>
