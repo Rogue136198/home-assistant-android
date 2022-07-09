@@ -1364,9 +1364,8 @@ class MessagingManager @Inject constructor(
         return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
     }
 
-    private fun compressBitmap(bitmap: Bitmap, quality: Int): Bitmap {
-        val stream = ByteArrayOutputStream()
-        Bitmap.compress(Bitmap.CompressFormat.WEBP, quality, stream)
+    private fun compressBitmap(): Bitmap {
+        Bitmap.compress(Bitmap.CompressFormat.WEBP, 100, stream)
         val byteArray = stream.toByteArray()
         return BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
     }
