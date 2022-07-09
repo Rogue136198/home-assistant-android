@@ -1360,9 +1360,17 @@ class MessagingManager @Inject constructor(
         }
 
     private fun Bitmap.getCompressedFrame(): Bitmap? {
-        val newHeight = 480 / width * height
+        val ratio width / height
+        val newHeight = 480 / ratio
         val newWidth = 480
         return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
+    }
+	
+	private fun bitmapToJPEG(bitmap: Bitmap): Bitmap? {
+        val baos = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, baos)
+        val bitmapdata = baos.toByteArray()
+        return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
     }
 
     private fun handleVisibility(
