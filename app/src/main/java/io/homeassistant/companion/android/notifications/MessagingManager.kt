@@ -83,6 +83,9 @@ import java.util.Locale
 import javax.inject.Inject
 import io.homeassistant.companion.android.common.R as commonR
 
+import java.io.ByteArrayOutputStream
+
+
 class MessagingManager @Inject constructor(
     @ApplicationContext val context: Context,
     private val integrationUseCase: IntegrationRepository,
@@ -1364,11 +1367,13 @@ class MessagingManager @Inject constructor(
         return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
     }
 
-    private fun Bitmap.getCompressedJPEG(): Bitmap? {
-        Bitmap bmp = null
-        ByteArrayOutputStream stream = new ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.JPEG, 100, stream)
-        byte[] byteArray = stream.toByteArray()
+    fun bitmapToFile(bitmap: Bitmap, fileNameToSave: String): JPEG? {
+        return try {
+            //Convert bitmap to byte array
+            val bos = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 0, bos)
+            val bitmapdata = bos.toByteArray()
+        }
     }
 
     private fun handleVisibility(
