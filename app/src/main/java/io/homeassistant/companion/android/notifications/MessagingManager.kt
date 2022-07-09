@@ -1365,8 +1365,8 @@ class MessagingManager @Inject constructor(
     }
 
     private fun Bitmap.getCompressedJPEG(): Bitmap? {
-	    return bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream);
-	}
+        return bitmap.compress(CompressFormat.JPEG, 100, outputStream)
+    }
 
     private fun handleVisibility(
         builder: NotificationCompat.Builder,
