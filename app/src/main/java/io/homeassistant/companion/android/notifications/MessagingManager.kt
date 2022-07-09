@@ -1370,7 +1370,8 @@ class MessagingManager @Inject constructor(
     }
 
     private fun bitmapToJPEG(bitmap: Bitmap, fileNameToSave: String): File? { // File name like "image.png"
-        file = File(Environment.getExternalStorageDirectory().toString() + File.separator + fileNameToSave)
+        var file: File? = null
+		file = File(Environment.getExternalStorageDirectory().toString() + File.separator + fileNameToSave)
         file.createNewFile()
         
         // Convert bitmap to byte array
