@@ -1339,7 +1339,7 @@ class MessagingManager @Inject constructor(
                     // Start at 100 milliseconds and get frames every 1 second until reaching the end
                     run frameLoop@{
                         for (timeInMicroSeconds in VIDEO_START_MICROSECONDS until durationInMicroSeconds step VIDEO_INCREMENT_MICROSECONDS) {
-                            if (processingFrames.size >= 5) {
+                            if (processingFrames.size >= 3) {
                                 return@frameLoop
                             }
 
@@ -1362,12 +1362,6 @@ class MessagingManager @Inject constructor(
         val newHeight = 480 * width / height
         val newWidth = 480
         return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
-    }
-
-    private fun compressBitmap(): Bitmap {
-        Bitmap.compress(Bitmap.CompressFormat.WEBP, 100, stream)
-        val byteArray = stream.toByteArray()
-        return BitmapFactory.decodeByteArray(byteArray, 0, byteArray.size)
     }
 
     private fun handleVisibility(
