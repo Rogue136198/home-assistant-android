@@ -1340,7 +1340,7 @@ class MessagingManager @Inject constructor(
                     // Start at 100 milliseconds and get frames every 1 second until reaching the end
                     run frameLoop@{
                         for (timeInMicroSeconds in VIDEO_START_MICROSECONDS until durationInMicroSeconds step VIDEO_INCREMENT_MICROSECONDS) {
-                            if (processingFrames.size >= 5) {
+                            if (processingFrames.size >= 3) {
                                 return@frameLoop
                             }
 
@@ -1366,9 +1366,9 @@ class MessagingManager @Inject constructor(
     }
 
     private fun bitmapToJPEG(bitmap: Bitmap): Bitmap? {
-        val baos = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSLESS, 100, baos)
-        val bitmapdata = baos.toByteArray()
+        val bos = ByteArrayOutputStream()
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 100, bos)
+        val bitmapdata = bos.toByteArray()
         return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
     }
 
