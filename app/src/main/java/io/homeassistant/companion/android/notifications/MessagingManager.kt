@@ -1363,8 +1363,7 @@ class MessagingManager @Inject constructor(
         val ratio = width / height
         val newHeight = 480 / ratio
         val newWidth = 480
-		Bitmap scaledBitmap = null
-        scaledBitmap = Bitmap.createScaledBitmap(Bitmap, newWidth, newHeight, false)
+        val scaledBitmap = Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
         val baos = ByteArrayOutputStream()
         scaledBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 0, baos)
         val bitmapdata = baos.toByteArray()
