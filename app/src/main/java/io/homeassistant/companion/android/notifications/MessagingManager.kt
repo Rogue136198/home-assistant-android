@@ -245,7 +245,7 @@ class MessagingManager @Inject constructor(
 
         // Video Values
         const val VIDEO_START_MICROSECONDS = 100000L
-        const val VIDEO_INCREMENT_MICROSECONDS = 1000000L
+        const val VIDEO_INCREMENT_MICROSECONDS = 500000L
         const val VIDEO_GUESS_MILLISECONDS = 7000L
     }
 
@@ -1340,7 +1340,7 @@ class MessagingManager @Inject constructor(
                     // Start at 100 milliseconds and get frames every 1 second until reaching the end
                     run frameLoop@{
                         for (timeInMicroSeconds in VIDEO_START_MICROSECONDS until durationInMicroSeconds step VIDEO_INCREMENT_MICROSECONDS) {
-                            if (processingFrames.size >= 5) {
+                            if (processingFrames.size >= 10) {
                                 return@frameLoop
                             }
 
@@ -1363,11 +1363,7 @@ class MessagingManager @Inject constructor(
         val ratio = width / height
         val newHeight = 480 / ratio
         val newWidth = 480
-        val scaledBitmap = Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
-        val baos = ByteArrayOutputStream()
-        scaledBitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, 0, baos)
-        val bitmapdata = baos.toByteArray()
-        return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
+        return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
     }
 
     private fun handleVisibility(
