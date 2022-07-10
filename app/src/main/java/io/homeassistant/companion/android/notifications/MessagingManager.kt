@@ -1360,8 +1360,8 @@ class MessagingManager @Inject constructor(
 
     private fun Bitmap.getCompressedFrame(): Bitmap? {
         val ratio = width / height
-        val newHeight = 640 / ratio
-        val newWidth = 640
+        val newHeight = 480
+        val newWidth = 480 * ratio
         return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
     }
 
