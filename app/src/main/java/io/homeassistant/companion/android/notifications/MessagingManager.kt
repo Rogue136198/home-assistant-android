@@ -1359,17 +1359,12 @@ class MessagingManager @Inject constructor(
             return@withContext processingFrames.awaitAll().filterNotNull()
         }
 
-    private fun Bitmap.getCompressedFrame(bitmap: Bitmap): Bitmap? {
+    private fun Bitmap.getCompressedFrame(): Bitmap? {
         val ratio = width / height
-        val newHeight = 480 / ratio
-        val newWidth = 480
-        val scaledBitmap = Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
-        val bos = ByteArrayOutputStream()
-
-        scaledBitmap.compress(Bitmap.CompressFormat.WEBP, 0, bos)
-        val bitMapData = bos.toByteArray()
-        return BitmapFactory.decodeByteArray(bitMapData, 0, bitMapData.size)
-    }
+        val newHeight = 240 / ratio
+        val newWidth = 240
+        return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
+        }
 
     private fun handleVisibility(
         builder: NotificationCompat.Builder,
