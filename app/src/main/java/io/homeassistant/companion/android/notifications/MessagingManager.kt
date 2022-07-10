@@ -77,6 +77,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.net.URL
 import java.net.URLDecoder
 import java.util.Locale
@@ -1358,14 +1359,16 @@ class MessagingManager @Inject constructor(
             return@withContext processingFrames.awaitAll().filterNotNull()
         }
 
-    private fun Bitmap.getCompressedFrame(): Bitmap? {
+    private fun Bitmap.getCompressedFrame(bitmap: Bitmap): Bitmap? {
         val ratio = width / height
         val newHeight = 480 / ratio
         val newWidth = 480
         val scaledBitmap = Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
-        val compressedBitmap = compress(Bitmap.CompressFormat.WEBP_LOSSY, 0, scaledBitmap)
-        val bitmapdata = compressedBitmap.toByteArray()
-        return BitmapFactory.decodeByteArray(bitmapdata, 0, bitmapdata.size)
+        val bos = ByteArrayOutputStream()
+
+        val compress = bitmap.compress(Bitmap.CompressFormat.WEBP, 0, bos)
+        val bitMapData = bos.toByteArray()
+        return BitmapFactory.decodeByteArray(bitMapData, 0, bitMapData.size)
     }
 
     private fun handleVisibility(
