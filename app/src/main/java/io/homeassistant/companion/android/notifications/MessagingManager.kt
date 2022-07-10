@@ -77,7 +77,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.io.ByteArrayOutputStream
 import java.net.URL
 import java.net.URLDecoder
 import java.util.Locale
@@ -1364,7 +1363,7 @@ class MessagingManager @Inject constructor(
         val newHeight = 240 / ratio
         val newWidth = 240
         return Bitmap.createScaledBitmap(this, newWidth, newHeight, false)
-        }
+    }
 
     private fun handleVisibility(
         builder: NotificationCompat.Builder,
