@@ -1288,7 +1288,6 @@ class MessagingManager @Inject constructor(
             val url = UrlHandler.handle(urlUseCase.getUrl(), it)
             getVideoFrames(url, !UrlHandler.isAbsoluteUrl(it))?.let { frames ->
                 Log.d(TAG, "Found ${frames.size} frames for video notification")
-                Log.d(TAG, "Bitmap frames size ${frames.sumOf { frame -> frame.allocationByteCount }} ")
                 RemoteViews(context.packageName, R.layout.view_image_flipper).let { remoteViewFlipper ->
                     if (frames.isNotEmpty()) {
                         frames.forEach { frame ->
@@ -1344,8 +1343,6 @@ class MessagingManager @Inject constructor(
                         for (timeInMicroSeconds in VIDEO_START_MICROSECONDS until durationInMicroSeconds step VIDEO_INCREMENT_MICROSECONDS) {
                             // Max size in bytes for notification GIF
                             val maxSize = (2500000 - singleFrame)
-                            Log.d(TAG, "Max Frame Size $maxSize")
-                            Log.d(TAG, "First Frame Size $singleFrame")
                             if (processingFramesSize >= maxSize) {
                                 return@frameLoop
                             }
@@ -1355,7 +1352,6 @@ class MessagingManager @Inject constructor(
                                     processingFrames.add(async { smallFrame.getCompressedFrame() })
                                     processingFramesSize += (smallFrame.getCompressedFrame())!!.allocationByteCount
                                     singleFrame = (smallFrame.getCompressedFrame())!!.allocationByteCount
-                                    Log.d(TAG, "Frame Size $processingFramesSize")
                                 }
                         }
                     }
