@@ -1288,6 +1288,7 @@ class MessagingManager @Inject constructor(
             val url = UrlHandler.handle(urlUseCase.getUrl(), it)
             getVideoFrames(url, !UrlHandler.isAbsoluteUrl(it))?.let { frames ->
                 Log.d(TAG, "Found ${frames.size} frames for video notification")
+                Log.d(TAG, "Bitmap frames size ${frames.sumOf { frame -> frame.allocationByteCount }} ")
                 RemoteViews(context.packageName, R.layout.view_image_flipper).let { remoteViewFlipper ->
                     if (frames.isNotEmpty()) {
                         frames.forEach { frame ->
@@ -1324,6 +1325,8 @@ class MessagingManager @Inject constructor(
         ) {
             url ?: return@withContext null
             val processingFrames = mutableListOf<Deferred<Bitmap?>>()
+            var processingFramesSize = 0
+            var singleFrame = 0
 
             try {
                 MediaMetadataRetriever().let { mediaRetriever ->
@@ -1339,12 +1342,21 @@ class MessagingManager @Inject constructor(
                     // Start at 100 milliseconds and get frames every 0.5 seconds until reaching the end
                     run frameLoop@{
                         for (timeInMicroSeconds in VIDEO_START_MICROSECONDS until durationInMicroSeconds step VIDEO_INCREMENT_MICROSECONDS) {
-                            if (processingFrames.size >= 12) {
+                            // Max size in bytes for notification GIF
+                            val maxSize = (2500000 - singleFrame)
+                            Log.d(TAG, "Max Frame Size $maxSize")
+                            Log.d(TAG, "First Frame Size $singleFrame")
+                            if (processingFramesSize >= maxSize) {
                                 return@frameLoop
                             }
 
                             mediaRetriever.getFrameAtTime(timeInMicroSeconds, MediaMetadataRetriever.OPTION_CLOSEST)
-                                ?.let { smallFrame -> processingFrames.add(async { smallFrame.getCompressedFrame() }) }
+                                ?.let { smallFrame ->
+                                    processingFrames.add(async { smallFrame.getCompressedFrame() })
+                                    processingFramesSize += (smallFrame.getCompressedFrame())!!.allocationByteCount
+                                    singleFrame = (smallFrame.getCompressedFrame())!!.allocationByteCount
+                                    Log.d(TAG, "Frame Size $processingFramesSize")
+                                }
                         }
                     }
 
