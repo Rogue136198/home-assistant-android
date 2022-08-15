@@ -79,6 +79,8 @@ import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.net.URL
 import java.net.URLDecoder
 import java.util.Locale
@@ -131,6 +133,7 @@ class MessagingManager @Inject constructor(
         const val PACKAGE_NAME = "package_name"
         const val COMMAND = "command"
         const val TTS_TEXT = "tts_text"
+        const val CHANNEL = "channel"
 
         // special intent constants
         const val INTENT_PACKAGE_NAME = "intent_package_name"
@@ -291,9 +294,9 @@ class MessagingManager @Inject constructor(
                 Log.d(TAG, "Clearing notification with tag: ${jsonData["tag"]}")
                 clearNotification(jsonData["tag"]!!)
             }
-            jsonData[MESSAGE] == REMOVE_CHANNEL && !jsonData["channel"].isNullOrBlank() -> {
-                Log.d(TAG, "Removing Notification channel ${jsonData["channel"]}")
-                removeNotificationChannel(jsonData["channel"]!!)
+            jsonData[MESSAGE] == REMOVE_CHANNEL && !jsonData[CHANNEL].isNullOrBlank() -> {
+                Log.d(TAG, "Removing Notification channel ${jsonData[CHANNEL]}")
+                removeNotificationChannel(jsonData[CHANNEL]!!)
             }
             jsonData[MESSAGE] == TTS -> {
                 Log.d(TAG, "Sending notification title to TTS")
@@ -1117,7 +1120,7 @@ class MessagingManager @Inject constructor(
         builder: NotificationCompat.Builder,
         data: Map<String, String>
     ) {
-        if (data["channel"] == ALARM_STREAM) {
+        if (data[CHANNEL] == ALARM_STREAM) {
             builder.setCategory(Notification.CATEGORY_ALARM)
             builder.setSound(
                 RingtoneManager.getActualDefaultRingtoneUri(
@@ -1394,19 +1397,31 @@ class MessagingManager @Inject constructor(
             Dispatchers.IO
         ) {
             url ?: return@withContext null
+            val videoFile = File(context.applicationContext.cacheDir.absolutePath + "/notifications/video-${System.currentTimeMillis()}")
             val processingFrames = mutableListOf<Deferred<Bitmap?>>()
             var processingFramesSize = 0
             var singleFrame = 0
 
             try {
                 MediaMetadataRetriever().let { mediaRetriever ->
+                    val request = Request.Builder().apply {
+                        url(url)
+                        if (requiresAuth) {
+                            addHeader("Authorization", authenticationUseCase.buildBearerToken())
+                        }
+                    }.build()
+                    val response = okHttpClient.newCall(request).execute()
 
-                    if (requiresAuth) {
-                        mediaRetriever.setDataSource(url.toString(), mapOf("Authorization" to authenticationUseCase.buildBearerToken()))
-                    } else {
-                        mediaRetriever.setDataSource(url.toString(), hashMapOf())
+                    if (!videoFile.exists()) {
+                        videoFile.parentFile?.mkdirs()
+                        videoFile.createNewFile()
                     }
+                    FileOutputStream(videoFile).use { output ->
+                        response.body?.byteStream()?.copyTo(output)
+                    }
+                    response.close()
 
+                    mediaRetriever.setDataSource(videoFile.absolutePath)
                     val durationInMicroSeconds = ((mediaRetriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: VIDEO_GUESS_MILLISECONDS)) * 1000
 
                     // Start at 100 milliseconds and get frames every 0.75 seconds until reaching the end
@@ -1434,7 +1449,9 @@ class MessagingManager @Inject constructor(
                 Log.e(TAG, "Couldn't download video for notification", e)
             }
 
-            return@withContext processingFrames.awaitAll().filterNotNull()
+            val frames = processingFrames.awaitAll().filterNotNull()
+            videoFile.delete()
+            return@withContext frames
         }
 
     private fun Bitmap.getCompressedFrame(): Bitmap? {
@@ -1587,9 +1604,9 @@ class MessagingManager @Inject constructor(
         var channelID = generalChannel
         var channelName = "General"
 
-        if (data.containsKey("channel")) {
-            channelID = createChannelID(data["channel"].toString())
-            channelName = data["channel"].toString().trim()
+        if (!data[CHANNEL].isNullOrEmpty()) {
+            channelID = createChannelID(data[CHANNEL].toString())
+            channelName = data[CHANNEL].toString().trim()
         }
 
         // Since android Oreo notification channel is needed.
