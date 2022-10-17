@@ -102,6 +102,8 @@ class MessagingManager @Inject constructor(
         const val TAG = "MessagingService"
 
         const val APP_PREFIX = "app://"
+        const val DEEP_LINK_PREFIX = "deep-link://"
+        const val INTENT_PREFIX = "intent:"
         const val MARKET_PREFIX = "https://play.google.com/store/apps/details?id="
         const val SETTINGS_PREFIX = "settings://"
         const val NOTIFICATION_HISTORY = "notification_history"
@@ -134,6 +136,7 @@ class MessagingManager @Inject constructor(
         const val COMMAND = "command"
         const val TTS_TEXT = "tts_text"
         const val CHANNEL = "channel"
+        const val CONFIRMATION = "confirmation"
 
         // special intent constants
         const val INTENT_PACKAGE_NAME = "intent_package_name"
@@ -153,6 +156,7 @@ class MessagingManager @Inject constructor(
         const val COMMAND_VOLUME_LEVEL = "command_volume_level"
         const val COMMAND_BLUETOOTH = "command_bluetooth"
         const val COMMAND_BLE_TRANSMITTER = "command_ble_transmitter"
+        const val COMMAND_BEACON_MONITOR = "command_beacon_monitor"
         const val COMMAND_SCREEN_ON = "command_screen_on"
         const val COMMAND_MEDIA = "command_media"
         const val COMMAND_UPDATE_SENSORS = "command_update_sensors"
@@ -163,6 +167,8 @@ class MessagingManager @Inject constructor(
         const val COMMAND_LAUNCH_APP = "command_launch_app"
         const val COMMAND_PERSISTENT_CONNECTION = "command_persistent_connection"
         const val COMMAND_STOP_TTS = "command_stop_tts"
+        const val COMMAND_AUTO_SCREEN_BRIGHTNESS = "command_auto_screen_brightness"
+        const val COMMAND_SCREEN_BRIGHTNESS_LEVEL = "command_screen_brightness_level"
 
         // DND commands
         const val DND_PRIORITY_ONLY = "priority_only"
@@ -221,6 +227,8 @@ class MessagingManager @Inject constructor(
 
         // High accuracy commands
         const val HIGH_ACCURACY_SET_UPDATE_INTERVAL = "high_accuracy_set_update_interval"
+        const val FORCE_ON = "force_on"
+        const val FORCE_OFF = "force_off"
 
         // Command groups
         val DEVICE_COMMANDS = listOf(
@@ -230,6 +238,7 @@ class MessagingManager @Inject constructor(
             COMMAND_VOLUME_LEVEL,
             COMMAND_BLUETOOTH,
             COMMAND_BLE_TRANSMITTER,
+            COMMAND_BEACON_MONITOR,
             COMMAND_HIGH_ACCURACY_MODE,
             COMMAND_ACTIVITY,
             COMMAND_WEBVIEW,
@@ -238,7 +247,9 @@ class MessagingManager @Inject constructor(
             COMMAND_UPDATE_SENSORS,
             COMMAND_LAUNCH_APP,
             COMMAND_PERSISTENT_CONNECTION,
-            COMMAND_STOP_TTS
+            COMMAND_STOP_TTS,
+            COMMAND_AUTO_SCREEN_BRIGHTNESS,
+            COMMAND_SCREEN_BRIGHTNESS_LEVEL
         )
         val DND_COMMANDS = listOf(DND_ALARMS_ONLY, DND_ALL, DND_NONE, DND_PRIORITY_ONLY)
         val RM_COMMANDS = listOf(RM_NORMAL, RM_SILENT, RM_VIBRATE)
@@ -247,6 +258,7 @@ class MessagingManager @Inject constructor(
             SYSTEM_STREAM, DTMF_STREAM
         )
         val ENABLE_COMMANDS = listOf(TURN_OFF, TURN_ON)
+        val FORCE_COMMANDS = listOf(FORCE_OFF, FORCE_ON)
         val MEDIA_COMMANDS = listOf(
             MEDIA_FAST_FORWARD, MEDIA_NEXT, MEDIA_PAUSE, MEDIA_PLAY,
             MEDIA_PLAY_PAUSE, MEDIA_PREVIOUS, MEDIA_REWIND, MEDIA_STOP
@@ -278,13 +290,17 @@ class MessagingManager @Inject constructor(
             NotificationItem(0, now, jsonData[MESSAGE].toString(), jsonObject.toString(), source)
         notificationDao.add(notificationRow)
 
-        mainScope.launch {
-            try {
-                integrationUseCase.fireEvent("mobile_app_notification_received", jsonData)
-            } catch (e: Exception) {
-                Log.e(TAG, "Unable to send notification received event", e)
+        val confirmation = jsonData[CONFIRMATION]?.toBoolean() ?: false
+        if (confirmation) {
+            mainScope.launch {
+                try {
+                    integrationUseCase.fireEvent("mobile_app_notification_received", jsonData)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Unable to send notification received event", e)
+                }
             }
         }
+
         when {
             jsonData[MESSAGE] == REQUEST_LOCATION_UPDATE -> {
                 Log.d(TAG, "Request location update")
@@ -407,8 +423,22 @@ class MessagingManager @Inject constructor(
                             }
                         }
                     }
+                    COMMAND_BEACON_MONITOR -> {
+                        if (!jsonData[COMMAND].isNullOrEmpty() && jsonData[COMMAND] in ENABLE_COMMANDS)
+                            handleDeviceCommands(jsonData)
+                        else {
+                            mainScope.launch {
+                                Log.d(
+                                    TAG,
+                                    "Invalid beacon monitor command received, posting notification to device"
+                                )
+                                sendNotification(jsonData)
+                            }
+                        }
+                    }
                     COMMAND_HIGH_ACCURACY_MODE -> {
                         if ((!jsonData[COMMAND].isNullOrEmpty() && jsonData[COMMAND] in ENABLE_COMMANDS) ||
+                            (!jsonData[COMMAND].isNullOrEmpty() && jsonData[COMMAND] in FORCE_COMMANDS) ||
                             (
                                 !jsonData[COMMAND].isNullOrEmpty() && jsonData[COMMAND] == HIGH_ACCURACY_SET_UPDATE_INTERVAL &&
                                     jsonData[HIGH_ACCURACY_UPDATE_INTERVAL]?.toIntOrNull() != null && jsonData[HIGH_ACCURACY_UPDATE_INTERVAL]?.toInt()!! >= 5
@@ -445,7 +475,7 @@ class MessagingManager @Inject constructor(
                         handleDeviceCommands(jsonData)
                     }
                     COMMAND_MEDIA -> {
-                        if (!jsonData[COMMAND].isNullOrEmpty() && jsonData[COMMAND] in MEDIA_COMMANDS && !jsonData[MEDIA_PACKAGE_NAME].isNullOrEmpty()) {
+                        if (!jsonData[MEDIA_COMMAND].isNullOrEmpty() && jsonData[MEDIA_COMMAND] in MEDIA_COMMANDS && !jsonData[MEDIA_PACKAGE_NAME].isNullOrEmpty()) {
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
                                 handleDeviceCommands(jsonData)
                             } else {
@@ -507,6 +537,22 @@ class MessagingManager @Inject constructor(
                         }
                     }
                     COMMAND_STOP_TTS -> handleDeviceCommands(jsonData)
+                    COMMAND_AUTO_SCREEN_BRIGHTNESS -> {
+                        if (!jsonData[COMMAND].isNullOrEmpty() && jsonData[COMMAND] in ENABLE_COMMANDS)
+                            handleDeviceCommands(jsonData)
+                        else
+                            mainScope.launch {
+                                sendNotification(jsonData)
+                            }
+                    }
+                    COMMAND_SCREEN_BRIGHTNESS_LEVEL -> {
+                        if (!jsonData[COMMAND].isNullOrEmpty() && jsonData[COMMAND]?.toIntOrNull() != null)
+                            handleDeviceCommands(jsonData)
+                        else
+                            mainScope.launch {
+                                sendNotification(jsonData)
+                            }
+                    }
                     else -> Log.d(TAG, "No command received")
                 }
             }
@@ -555,7 +601,7 @@ class MessagingManager @Inject constructor(
         val currentAlarmVolume = audioManager?.getStreamVolume(AudioManager.STREAM_ALARM)
         val maxAlarmVolume = audioManager?.getStreamMaxVolume(AudioManager.STREAM_ALARM)
         if (tts.isNullOrEmpty())
-            tts = context.getString(commonR.string.tts_no_title)
+            tts = context.getString(commonR.string.tts_no_text)
         textToSpeech = TextToSpeech(
             context
         ) {
@@ -783,10 +829,17 @@ class MessagingManager @Inject constructor(
                     SensorWorker.start(context)
                 }
             }
+            COMMAND_BEACON_MONITOR -> {
+                if (command == TURN_OFF)
+                    BluetoothSensorManager.enableDisableBeaconMonitor(context, false)
+                if (command == TURN_ON)
+                    BluetoothSensorManager.enableDisableBeaconMonitor(context, true)
+            }
             COMMAND_HIGH_ACCURACY_MODE -> {
                 when (command) {
                     TURN_OFF -> LocationSensorManager.setHighAccuracyModeSetting(context, false)
                     TURN_ON -> LocationSensorManager.setHighAccuracyModeSetting(context, true)
+                    FORCE_ON -> LocationSensorManager.setHighAccuracyModeSetting(context, true)
                     HIGH_ACCURACY_SET_UPDATE_INTERVAL -> LocationSensorManager.setHighAccuracyModeIntervalSetting(context, data[HIGH_ACCURACY_UPDATE_INTERVAL]!!.toInt())
                 }
                 val intent = Intent(context, LocationSensorManager::class.java)
@@ -865,6 +918,16 @@ class MessagingManager @Inject constructor(
             }
             COMMAND_STOP_TTS -> {
                 stopTTS()
+            }
+            COMMAND_AUTO_SCREEN_BRIGHTNESS, COMMAND_SCREEN_BRIGHTNESS_LEVEL -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if (Settings.System.canWrite(context)) {
+                        if (!processScreenBrightness(data))
+                            mainScope.launch { sendNotification(data) }
+                    } else
+                        notifyMissingPermission(data[MESSAGE].toString())
+                } else if (!processScreenBrightness(data))
+                    mainScope.launch { sendNotification(data) }
             }
             else -> Log.d(TAG, "No command received")
         }
@@ -1040,8 +1103,11 @@ class MessagingManager @Inject constructor(
         if (data[NOTIFICATION_ICON]?.startsWith("mdi:") == true && !data[NOTIFICATION_ICON]?.substringAfter("mdi:").isNullOrBlank() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             val iconName = data[NOTIFICATION_ICON]!!.split(":")[1]
             val iconDrawable =
-                IconicsDrawable(context, "cmd-$iconName").toAndroidIconCompat()
-            builder.setSmallIcon(iconDrawable)
+                IconicsDrawable(context, "cmd-$iconName")
+            if (iconDrawable.icon != null)
+                builder.setSmallIcon(iconDrawable.toAndroidIconCompat())
+            else
+                builder.setSmallIcon(commonR.drawable.ic_stat_ic_notification)
         } else
             builder.setSmallIcon(commonR.drawable.ic_stat_ic_notification)
     }
@@ -1560,6 +1626,7 @@ class MessagingManager @Inject constructor(
     private fun createOpenUriPendingIntent(
         uri: String
     ): PendingIntent {
+        val needsPackage = uri.startsWith(APP_PREFIX) || uri.startsWith(INTENT_PREFIX)
         val intent = when {
             uri.isBlank() -> {
                 WebViewActivity.newInstance(context)
@@ -1567,15 +1634,23 @@ class MessagingManager @Inject constructor(
             uri.startsWith(APP_PREFIX) -> {
                 context.packageManager.getLaunchIntentForPackage(uri.substringAfter(APP_PREFIX))
             }
+            uri.startsWith(INTENT_PREFIX) -> {
+                Intent.parseUri(uri, Intent.URI_INTENT_SCHEME)
+            }
             uri.startsWith(SETTINGS_PREFIX) -> {
                 if (uri.substringAfter(SETTINGS_PREFIX) == NOTIFICATION_HISTORY)
                     SettingsActivity.newInstance(context)
                 else
                     WebViewActivity.newInstance(context)
             }
-            UrlHandler.isAbsoluteUrl(uri) -> {
+            UrlHandler.isAbsoluteUrl(uri) || uri.startsWith(DEEP_LINK_PREFIX) -> {
                 Intent(Intent.ACTION_VIEW).apply {
-                    this.data = Uri.parse(uri)
+                    this.data = Uri.parse(
+                        if (uri.startsWith(DEEP_LINK_PREFIX))
+                            uri.removePrefix(DEEP_LINK_PREFIX)
+                        else
+                            uri
+                    )
                 }
             }
             else -> {
@@ -1585,13 +1660,28 @@ class MessagingManager @Inject constructor(
 
         if (uri.startsWith(SETTINGS_PREFIX) && uri.substringAfter(SETTINGS_PREFIX) == NOTIFICATION_HISTORY)
             intent.putExtra("fragment", NOTIFICATION_HISTORY)
+
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         intent.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        intent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
 
         return PendingIntent.getActivity(
             context,
             (uri.hashCode() + System.currentTimeMillis()).toInt(),
-            intent,
+            if (needsPackage) {
+                val intentPackage = intent.`package`?.let {
+                    context.packageManager.getLaunchIntentForPackage(
+                        it
+                    )
+                }
+                if (intentPackage == null && (!intent.`package`.isNullOrEmpty() || uri.startsWith(APP_PREFIX))) {
+                    val marketIntent = Intent(Intent.ACTION_VIEW)
+                    marketIntent.data = Uri.parse(MARKET_PREFIX + if (uri.startsWith(INTENT_PREFIX)) intent.`package`.toString() else uri.removePrefix(APP_PREFIX))
+                    marketIntent
+                } else
+                    intent
+            } else
+                intent,
             PendingIntent.FLAG_IMMUTABLE
         )
     }
@@ -1734,6 +1824,14 @@ class MessagingManager @Inject constructor(
             Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.parse("package:${context.packageName}")
         )
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        context.startActivity(intent)
+    }
+
+    @RequiresApi(Build.VERSION_CODES.M)
+    private fun requestWriteSystemPermission() {
+        val intent = Intent(Settings.ACTION_MANAGE_WRITE_SETTINGS)
+        intent.data = Uri.parse("package:" + context.packageName)
         intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
         context.startActivity(intent)
     }
@@ -1886,6 +1984,7 @@ class MessagingManager @Inject constructor(
             else
                 WebViewActivity.newInstance(context, title)
             intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            intent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
             context.startActivity(intent)
         } catch (e: Exception) {
             Log.e(TAG, "Unable to open webview", e)
@@ -1943,6 +2042,27 @@ class MessagingManager @Inject constructor(
         WebsocketManager.start(context)
     }
 
+    private fun processScreenBrightness(data: Map<String, String>): Boolean {
+        val command = data[COMMAND]
+        val contentResolver = context.contentResolver
+        val success = Settings.System.putInt(
+            contentResolver,
+            if (data[MESSAGE].toString() == COMMAND_SCREEN_BRIGHTNESS_LEVEL)
+                Settings.System.SCREEN_BRIGHTNESS
+            else
+                Settings.System.SCREEN_BRIGHTNESS_MODE,
+            if (data[MESSAGE].toString() == COMMAND_SCREEN_BRIGHTNESS_LEVEL)
+                command!!.toInt().coerceIn(0, 255)
+            else {
+                if (command == TURN_ON)
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_AUTOMATIC
+                else
+                    Settings.System.SCREEN_BRIGHTNESS_MODE_MANUAL
+            }
+        )
+        return success
+    }
+
     private fun notifyMissingPermission(type: String) {
         val appManager =
             context.getSystemService<ActivityManager>()
@@ -1976,6 +2096,11 @@ class MessagingManager @Inject constructor(
                                     ).show()
                                 }
                                 navigateAppDetails()
+                            }
+                            COMMAND_SCREEN_BRIGHTNESS_LEVEL, COMMAND_AUTO_SCREEN_BRIGHTNESS -> {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                                    requestWriteSystemPermission()
+                                }
                             }
                         }
                     }

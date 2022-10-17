@@ -14,7 +14,9 @@ plugins {
 }
 
 android {
-    compileSdk = 32
+    namespace = "io.homeassistant.companion.android"
+
+    compileSdk = 33
 
     ndkVersion = "21.3.6528147"
 
@@ -143,45 +145,45 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.6.4")
 
-    implementation("com.google.dagger:hilt-android:2.43.2")
-    kapt("com.google.dagger:hilt-android-compiler:2.43.2")
+    implementation("com.google.dagger:hilt-android:2.44")
+    kapt("com.google.dagger:hilt-android-compiler:2.44")
 
-    implementation("androidx.appcompat:appcompat:1.5.0")
+    implementation("androidx.appcompat:appcompat:1.5.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.5.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.recyclerview:recyclerview:1.2.1")
     implementation("androidx.preference:preference-ktx:1.2.0")
     implementation("com.google.android.material:material:1.6.1")
-    implementation("androidx.fragment:fragment-ktx:1.5.2")
+    implementation("androidx.fragment:fragment-ktx:1.5.3")
 
     implementation("com.squareup.retrofit2:retrofit:2.9.0")
-    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.3")
+    implementation("com.fasterxml.jackson.module:jackson-module-kotlin:2.13.4")
     implementation("com.squareup.okhttp3:okhttp:4.10.0")
     implementation("com.squareup.picasso:picasso:2.8")
 
     "fullImplementation"("com.google.android.gms:play-services-location:20.0.0")
-    "fullImplementation"("com.google.firebase:firebase-core:21.1.0")
-    "fullImplementation"("com.google.firebase:firebase-iid:21.1.0")
-    "fullImplementation"("com.google.firebase:firebase-messaging:23.0.7")
-    "fullImplementation"("io.sentry:sentry-android:6.3.1")
+    "fullImplementation"(platform("com.google.firebase:firebase-bom:30.4.1"))
+    "fullImplementation"("com.google.firebase:firebase-analytics")
+    "fullImplementation"("com.google.firebase:firebase-messaging")
+    "fullImplementation"("io.sentry:sentry-android:6.5.0")
     "fullImplementation"("org.jetbrains.kotlinx:kotlinx-coroutines-play-services:1.6.4")
-    "fullImplementation"("com.google.android.gms:play-services-wearable:17.1.0")
+    "fullImplementation"("com.google.android.gms:play-services-wearable:18.0.0")
     "fullImplementation"("androidx.wear:wear-remote-interactions:1.0.0")
 
     implementation("androidx.biometric:biometric:1.1.0")
-    implementation("androidx.webkit:webkit:1.4.0")
+    implementation("androidx.webkit:webkit:1.5.0")
 
-    implementation("com.google.android.exoplayer:exoplayer-core:2.17.1")
-    implementation("com.google.android.exoplayer:exoplayer-hls:2.17.1")
-    implementation("com.google.android.exoplayer:exoplayer-ui:2.17.1")
-    "fullImplementation"("com.google.android.exoplayer:extension-cronet:2.17.1")
-    "minimalImplementation"("com.google.android.exoplayer:extension-cronet:2.15.1") {
+    implementation("com.google.android.exoplayer:exoplayer-core:2.18.1")
+    implementation("com.google.android.exoplayer:exoplayer-hls:2.18.1")
+    implementation("com.google.android.exoplayer:exoplayer-ui:2.18.1")
+    "fullImplementation"("com.google.android.exoplayer:extension-cronet:2.18.1")
+    "minimalImplementation"("com.google.android.exoplayer:extension-cronet:2.18.1") {
         exclude(group = "com.google.android.gms", module = "play-services-cronet")
     }
-    "minimalImplementation"("org.chromium.net:cronet-embedded:101.4951.41")
+    "minimalImplementation"("org.chromium.net:cronet-embedded:105.5195.68")
 
     implementation("androidx.compose.animation:animation:1.2.1")
-    implementation("androidx.compose.compiler:compiler:1.3.0")
+    implementation("androidx.compose.compiler:compiler:1.3.1")
     implementation("androidx.compose.foundation:foundation:1.2.1")
     implementation("androidx.compose.material:material:1.2.1")
     implementation("androidx.compose.material:material-icons-core:1.2.1")
@@ -189,9 +191,9 @@ dependencies {
     implementation("androidx.compose.runtime:runtime:1.2.1")
     implementation("androidx.compose.ui:ui:1.2.1")
     implementation("androidx.compose.ui:ui-tooling:1.2.1")
-    implementation("androidx.activity:activity-compose:1.5.1")
-    implementation("androidx.navigation:navigation-compose:2.5.1")
-    implementation("com.google.android.material:compose-theme-adapter:1.1.15")
+    implementation("androidx.activity:activity-compose:1.6.0")
+    implementation("androidx.navigation:navigation-compose:2.5.2")
+    implementation("com.google.android.material:compose-theme-adapter:1.1.19")
     implementation("com.google.accompanist:accompanist-appcompat-theme:0.25.1")
 
     implementation("com.mikepenz:iconics-core:5.3.4")

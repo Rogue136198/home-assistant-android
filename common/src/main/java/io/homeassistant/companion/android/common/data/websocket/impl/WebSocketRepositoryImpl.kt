@@ -8,12 +8,15 @@ import com.fasterxml.jackson.module.kotlin.contains
 import com.fasterxml.jackson.module.kotlin.convertValue
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import io.homeassistant.companion.android.common.BuildConfig
+import io.homeassistant.companion.android.common.data.HomeAssistantVersion
 import io.homeassistant.companion.android.common.data.authentication.AuthenticationRepository
 import io.homeassistant.companion.android.common.data.authentication.AuthorizationException
 import io.homeassistant.companion.android.common.data.integration.ServiceData
 import io.homeassistant.companion.android.common.data.integration.impl.entities.EntityResponse
 import io.homeassistant.companion.android.common.data.url.UrlRepository
 import io.homeassistant.companion.android.common.data.websocket.WebSocketRepository
+import io.homeassistant.companion.android.common.data.websocket.WebSocketRequest
 import io.homeassistant.companion.android.common.data.websocket.WebSocketState
 import io.homeassistant.companion.android.common.data.websocket.impl.entities.AreaRegistryResponse
 import io.homeassistant.companion.android.common.data.websocket.impl.entities.AreaRegistryUpdatedEvent
@@ -26,18 +29,20 @@ import io.homeassistant.companion.android.common.data.websocket.impl.entities.Ev
 import io.homeassistant.companion.android.common.data.websocket.impl.entities.GetConfigResponse
 import io.homeassistant.companion.android.common.data.websocket.impl.entities.SocketResponse
 import io.homeassistant.companion.android.common.data.websocket.impl.entities.StateChangedEvent
-import kotlinx.coroutines.CancellableContinuation
+import io.homeassistant.companion.android.common.data.websocket.impl.entities.TemplateUpdatedEvent
+import io.homeassistant.companion.android.common.data.websocket.impl.entities.TriggerEvent
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.shareIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -51,6 +56,7 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import okio.ByteString
+import java.io.IOException
 import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
@@ -63,6 +69,11 @@ class WebSocketRepositoryImpl @Inject constructor(
     companion object {
         private const val TAG = "WebSocketRepository"
 
+        private const val SUBSCRIBE_TYPE_SUBSCRIBE_EVENTS = "subscribe_events"
+        private const val SUBSCRIBE_TYPE_SUBSCRIBE_TRIGGER = "subscribe_trigger"
+        private const val SUBSCRIBE_TYPE_RENDER_TEMPLATE = "render_template"
+        private const val SUBSCRIBE_TYPE_PUSH_NOTIFICATION_CHANNEL =
+            "mobile_app/push_notification_channel"
         private const val EVENT_STATE_CHANGED = "state_changed"
         private const val EVENT_AREA_REGISTRY_UPDATED = "area_registry_updated"
         private const val EVENT_DEVICE_REGISTRY_UPDATED = "device_registry_updated"
@@ -75,19 +86,14 @@ class WebSocketRepositoryImpl @Inject constructor(
     private val mapper = jacksonObjectMapper()
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
         .setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE)
-    private val responseCallbackJobs = mutableMapOf<Long, CancellableContinuation<SocketResponse>>()
+    private val activeMessages = mutableMapOf<Long, WebSocketRequest>()
     private val id = AtomicLong(1)
     private var connection: WebSocket? = null
     private var connectionState: WebSocketState? = null
+    private var connectionHaVersion: HomeAssistantVersion? = null
     private val connectedMutex = Mutex()
     private var connected = CompletableDeferred<Boolean>()
     private val eventSubscriptionMutex = Mutex()
-    private val eventSubscriptionFlow = mutableMapOf<String, SharedFlow<*>>()
-    private var eventSubscriptionProducerScope = mutableMapOf<String, ProducerScope<Any>>()
-    private val notificationMutex = Mutex()
-    private var notificationFlow: Flow<Map<String, Any>>? = null
-    private var notificationProducerScope: ProducerScope<Map<String, Any>>? = null
-    private var lastResponseID = mutableMapOf<String, Long?>()
 
     override fun getConnectionState(): WebSocketState? = connectionState
 
@@ -170,6 +176,9 @@ class WebSocketRepositoryImpl @Inject constructor(
     override suspend fun getStateChanges(): Flow<StateChangedEvent>? =
         subscribeToEventsForType(EVENT_STATE_CHANGED)
 
+    override suspend fun getStateChanges(entityIds: List<String>): Flow<TriggerEvent>? =
+        subscribeToTrigger("state", mapOf("entity_id" to entityIds))
+
     override suspend fun getAreaRegistryUpdates(): Flow<AreaRegistryUpdatedEvent>? =
         subscribeToEventsForType(EVENT_AREA_REGISTRY_UPDATED)
 
@@ -179,74 +188,104 @@ class WebSocketRepositoryImpl @Inject constructor(
     override suspend fun getEntityRegistryUpdates(): Flow<EntityRegistryUpdatedEvent>? =
         subscribeToEventsForType(EVENT_ENTITY_REGISTRY_UPDATED)
 
-    private suspend fun <T : Any> subscribeToEventsForType(eventType: String): Flow<T>? {
+    private suspend fun <T : Any> subscribeToEventsForType(eventType: String): Flow<T>? =
+        subscribeTo(SUBSCRIBE_TYPE_SUBSCRIBE_EVENTS, mapOf("event_type" to eventType))
+
+    override suspend fun getTemplateUpdates(template: String): Flow<TemplateUpdatedEvent>? =
+        subscribeTo(SUBSCRIBE_TYPE_RENDER_TEMPLATE, mapOf("template" to template))
+
+    private suspend fun subscribeToTrigger(platform: String, data: Map<Any, Any>): Flow<TriggerEvent>? {
+        val triggerData = mapOf(
+            "platform" to platform
+        ).plus(data)
+        return subscribeTo(SUBSCRIBE_TYPE_SUBSCRIBE_TRIGGER, mapOf("trigger" to triggerData))
+    }
+
+    /**
+     * Start a subscription for events on the websocket connection and get a Flow for listening to
+     * new messages. When there are no more listeners, the subscription will automatically be cancelled
+     * using `unsubscribe_events`. If the subscription already exists, the existing Flow is returned.
+     *
+     * @param type value for the `type` key in the subscription message, for example `subscribe_events`
+     * @param data a key/value map of additional data to be included in the subscription message, for
+     *             example the `event_type` + value when subscribing with `subscribe_events`
+     * @param timeout timeout until the subscription is ended after the flow is no longer collected
+     * @return a Flow that will emit messages delivered to this subscription, or `null` if an error
+     *         occurred
+     */
+    private suspend fun <T : Any> subscribeTo(
+        type: String,
+        data: Map<Any, Any>,
+        timeout: Long = 0
+    ): Flow<T>? {
+        val subscribeMessage = mapOf(
+            "type" to type
+        ).plus(data)
+
         eventSubscriptionMutex.withLock {
-            if (eventSubscriptionFlow[eventType] == null) {
-
-                val response = sendMessage(
-                    mapOf(
-                        "type" to "subscribe_events",
-                        "event_type" to eventType
-                    )
-                )
-                lastResponseID[eventType] = response?.id
-                if (response == null) {
-                    Log.e(TAG, "Unable to register for events of type $eventType")
-                    return null
-                }
-
-                eventSubscriptionFlow[eventType] = callbackFlow<T> {
-                    eventSubscriptionProducerScope[eventType] = this as ProducerScope<Any>
-                    awaitClose {
-                        Log.d(TAG, "Unsubscribing from $eventType")
-                        ioScope.launch {
-                            sendMessage(
-                                mapOf(
-                                    "type" to "unsubscribe_events",
-                                    "subscription" to lastResponseID[eventType]!!
-                                )
-                            )
-                            lastResponseID.remove(eventType)
+            if (activeMessages.values.none { it.message == subscribeMessage }) {
+                val channel = Channel<Any>(capacity = Channel.BUFFERED)
+                val flow = callbackFlow<T> {
+                    val producer = this as ProducerScope<Any>
+                    launch {
+                        channel.consumeAsFlow().collect {
+                            producer.send(it)
                         }
-                        eventSubscriptionProducerScope.remove(eventType)
-                        eventSubscriptionFlow.remove(eventType)
                     }
-                }.shareIn(ioScope, SharingStarted.WhileSubscribed())
-            }
-        }
-        return eventSubscriptionFlow[eventType]!! as Flow<T>
-    }
+                    awaitClose {
+                        ioScope.launch {
+                            var subscription: Long? = null
+                            eventSubscriptionMutex.withLock {
+                                activeMessages.entries.firstOrNull { it.value.message == subscribeMessage }
+                                    ?.let {
+                                        subscription = it.key
+                                        channel.close()
+                                        activeMessages.remove(subscription)
+                                    }
+                            }
+                            subscription?.let {
+                                Log.d(TAG, "Unsubscribing from $type with data $data")
+                                sendMessage(
+                                    mapOf(
+                                        "type" to "unsubscribe_events",
+                                        "subscription" to it
+                                    )
+                                )
+                            }
+                            if (activeMessages.isEmpty()) {
+                                connection?.close(1001, "Done listening to subscriptions.")
+                            }
+                        }
+                    }
+                }.shareIn(ioScope, SharingStarted.WhileSubscribed(timeout, 0))
 
-    override suspend fun getNotifications(): Flow<Map<String, Any>>? {
-        notificationMutex.withLock {
-            if (notificationFlow == null) {
-                val response = sendMessage(
-                    mapOf(
-                        "type" to "mobile_app/push_notification_channel",
-                        "webhook_id" to urlRepository.getWebhookId(),
-                        "support_confirm" to true
-                    )
+                val webSocketRequest = WebSocketRequest(
+                    message = subscribeMessage,
+                    eventFlow = flow,
+                    onEvent = channel
                 )
-
-                if (response == null) {
-                    Log.e(TAG, "Unable to register for notifications")
+                val response = sendMessage(webSocketRequest)
+                if (response == null || response.success != true) {
+                    Log.e(TAG, "Unable to subscribe to $type with data $data")
+                    activeMessages.entries
+                        .firstOrNull { it.value.message == subscribeMessage }
+                        ?.let { activeMessages.remove(it.key) }
                     return null
                 }
-
-                notificationFlow = callbackFlow {
-                    notificationProducerScope = this
-                    awaitClose {
-                        // TODO: Is there a way to unsubscribe?
-                        notificationFlow = null
-                        notificationProducerScope = null
-                        connection?.close(1001, "Done listening to notifications.")
-                    }
-                }.shareIn(ioScope, SharingStarted.WhileSubscribed(DISCONNECT_DELAY, 0))
             }
-
-            return notificationFlow
         }
+        return activeMessages.values.find { it.message == subscribeMessage }?.eventFlow as? Flow<T>
     }
+
+    override suspend fun getNotifications(): Flow<Map<String, Any>>? =
+        subscribeTo(
+            SUBSCRIBE_TYPE_PUSH_NOTIFICATION_CHANNEL,
+            mapOf(
+                "webhook_id" to urlRepository.getWebhookId().toString(),
+                "support_confirm" to true
+            ),
+            DISCONNECT_DELAY
+        )
 
     override suspend fun ackNotification(confirmId: String): Boolean {
         val response = sendMessage(
@@ -276,26 +315,47 @@ class WebSocketRepositoryImpl @Inject constructor(
                 .replace("http://", "ws://")
                 .plus("api/websocket")
 
-            connection = okHttpClient.newWebSocket(
-                Request.Builder().url(urlString).build(),
-                this
-            ).also {
-                // Preemptively send auth
-                connectionState = WebSocketState.AUTHENTICATING
-                it.send(
-                    mapper.writeValueAsString(
-                        mapOf(
-                            "type" to "auth",
-                            "access_token" to authenticationRepository.retrieveAccessToken()
+            try {
+                connection = okHttpClient.newWebSocket(
+                    Request.Builder().url(urlString).build(),
+                    this
+                ).also {
+                    // Preemptively send auth
+                    connectionState = WebSocketState.AUTHENTICATING
+                    it.send(
+                        mapper.writeValueAsString(
+                            mapOf(
+                                "type" to "auth",
+                                "access_token" to authenticationRepository.retrieveAccessToken()
+                            )
                         )
                     )
-                )
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Unable to connect", e)
+                return false
             }
 
             // Wait up to 30 seconds for auth response
             return true == withTimeoutOrNull(30000) {
                 return@withTimeoutOrNull try {
-                    connected.await()
+                    val didConnect = connected.await()
+                    if (didConnect && connectionHaVersion?.isAtLeast(2022, 9) == true) {
+                        connection?.let {
+                            val supportedFeaturesMessage = mapOf(
+                                "type" to "supported_features",
+                                "id" to id.getAndIncrement(),
+                                "features" to mapOf(
+                                    "coalesce_messages" to 1
+                                )
+                            )
+                            Log.d(TAG, "Sending message ${supportedFeaturesMessage["id"]}: $supportedFeaturesMessage")
+                            it.send(
+                                mapper.writeValueAsString(supportedFeaturesMessage)
+                            )
+                        }
+                    }
+                    didConnect
                 } catch (e: Exception) {
                     Log.e(TAG, "Unable to authenticate", e)
                     false
@@ -304,7 +364,10 @@ class WebSocketRepositoryImpl @Inject constructor(
         }
     }
 
-    private suspend fun sendMessage(request: Map<*, *>): SocketResponse? {
+    private suspend fun sendMessage(request: Map<*, *>): SocketResponse? =
+        sendMessage(WebSocketRequest(request))
+
+    private suspend fun sendMessage(request: WebSocketRequest): SocketResponse? {
         return if (connect()) {
             withTimeoutOrNull(30000) {
                 suspendCancellableCoroutine { cont ->
@@ -313,9 +376,11 @@ class WebSocketRepositoryImpl @Inject constructor(
                     connection?.let {
                         synchronized(it) {
                             val requestId = id.getAndIncrement()
-                            val outbound = request.plus("id" to requestId)
+                            val outbound = request.message.plus("id" to requestId)
                             Log.d(TAG, "Sending message $requestId: $outbound")
-                            responseCallbackJobs[requestId] = cont
+                            activeMessages[requestId] = request.apply {
+                                onResponse = cont
+                            }
                             connection?.send(mapper.writeValueAsString(outbound))
                             Log.d(TAG, "Message number $requestId sent")
                         }
@@ -331,7 +396,8 @@ class WebSocketRepositoryImpl @Inject constructor(
     private inline fun <reified T> mapResponse(response: SocketResponse?): T? =
         if (response?.result != null) mapper.convertValue(response.result) else null
 
-    private fun handleAuthComplete(successful: Boolean) {
+    private fun handleAuthComplete(successful: Boolean, haVersion: String?) {
+        connectionHaVersion = haVersion?.let { HomeAssistantVersion.fromString(it) }
         if (successful) {
             connectionState = WebSocketState.ACTIVE
             connected.complete(true)
@@ -343,43 +409,78 @@ class WebSocketRepositoryImpl @Inject constructor(
 
     private fun handleMessage(response: SocketResponse) {
         val id = response.id!!
-        responseCallbackJobs[id]?.resumeWith(Result.success(response))
-        responseCallbackJobs.remove(id)
+        activeMessages[id]?.let {
+            it.onResponse!!.resumeWith(Result.success(response))
+            if (it.eventFlow == null) {
+                activeMessages.remove(id)
+            }
+        }
     }
 
     private suspend fun handleEvent(response: SocketResponse) {
-        val eventResponseType = response.event?.get("event_type")
-        if (eventResponseType != null && eventResponseType.isTextual) {
-            val eventResponseClass = when (eventResponseType.textValue()) {
-                EVENT_STATE_CHANGED -> object : TypeReference<EventResponse<StateChangedEvent>>() {}
-                EVENT_AREA_REGISTRY_UPDATED ->
-                    object :
-                        TypeReference<EventResponse<AreaRegistryUpdatedEvent>>() {}
-                EVENT_DEVICE_REGISTRY_UPDATED ->
-                    object :
-                        TypeReference<EventResponse<DeviceRegistryUpdatedEvent>>() {}
-                EVENT_ENTITY_REGISTRY_UPDATED ->
-                    object :
-                        TypeReference<EventResponse<EntityRegistryUpdatedEvent>>() {}
-                else -> {
-                    Log.d(TAG, "Unknown event type received")
-                    object : TypeReference<EventResponse<Any>>() {}
-                }
-            }
-            val eventResponse = mapper.convertValue(
-                response.event,
-                eventResponseClass
-            )
-            eventSubscriptionProducerScope[eventResponse.eventType]?.send(eventResponse.data)
-        } else if (response.event?.contains("hass_confirm_id") == true) {
-            if (notificationProducerScope?.isActive == true) {
-                notificationProducerScope?.send(
+        val subscriptionId = response.id
+        activeMessages[subscriptionId]?.let { messageData ->
+            val subscriptionType = messageData.message["type"]
+            val eventResponseType = response.event?.get("event_type")
+
+            val message: Any =
+                if (response.event?.contains("hass_confirm_id") == true) {
                     mapper.convertValue(
                         response.event,
                         object : TypeReference<Map<String, Any>>() {}
                     )
-                )
+                } else if (subscriptionType == SUBSCRIBE_TYPE_RENDER_TEMPLATE) {
+                    mapper.convertValue(response.event, TemplateUpdatedEvent::class.java)
+                } else if (subscriptionType == SUBSCRIBE_TYPE_SUBSCRIBE_TRIGGER) {
+                    val trigger = response.event?.get("variables")?.get("trigger")
+                    if (trigger != null) {
+                        mapper.convertValue(trigger, TriggerEvent::class.java)
+                    } else {
+                        Log.w(TAG, "Received no trigger value for trigger subscription, skipping")
+                        return
+                    }
+                } else if (eventResponseType != null && eventResponseType.isTextual) {
+                    val eventResponseClass = when (eventResponseType.textValue()) {
+                        EVENT_STATE_CHANGED ->
+                            object :
+                                TypeReference<EventResponse<StateChangedEvent>>() {}
+                        EVENT_AREA_REGISTRY_UPDATED ->
+                            object :
+                                TypeReference<EventResponse<AreaRegistryUpdatedEvent>>() {}
+                        EVENT_DEVICE_REGISTRY_UPDATED ->
+                            object :
+                                TypeReference<EventResponse<DeviceRegistryUpdatedEvent>>() {}
+                        EVENT_ENTITY_REGISTRY_UPDATED ->
+                            object :
+                                TypeReference<EventResponse<EntityRegistryUpdatedEvent>>() {}
+                        else -> {
+                            Log.d(TAG, "Unknown event type received")
+                            object : TypeReference<EventResponse<Any>>() {}
+                        }
+                    }
+
+                    mapper.convertValue(
+                        response.event,
+                        eventResponseClass
+                    ).data
+                } else {
+                    Log.d(TAG, "Unknown event for subscription received, skipping")
+                    return
+                }
+
+            try {
+                messageData.onEvent?.send(message)
+            } catch (e: Exception) {
+                Log.e(TAG, "Unable to send event message to channel", e)
             }
+        } ?: run {
+            Log.d(TAG, "Received event for unknown subscription, unsubscribing")
+            sendMessage(
+                mapOf(
+                    "type" to "unsubscribe_events",
+                    "subscription" to subscriptionId
+                )
+            )
         }
     }
 
@@ -388,38 +489,30 @@ class WebSocketRepositoryImpl @Inject constructor(
             connectedMutex.withLock {
                 connected = CompletableDeferred()
                 connection = null
+                connectionHaVersion = null
                 if (connectionState != WebSocketState.CLOSED_AUTH)
                     connectionState = WebSocketState.CLOSED_OTHER
+                activeMessages
+                    .filterValues { it.eventFlow == null }
+                    .forEach {
+                        it.value.onResponse?.resumeWith(Result.failure(IOException()))
+                        activeMessages.remove(it.key)
+                    }
             }
         }
         // If we still have flows flowing
-        if ((eventSubscriptionFlow.any() || notificationFlow != null) && ioScope.isActive) {
+        if (activeMessages.any { it.value.eventFlow != null } && ioScope.isActive) {
             ioScope.launch {
                 delay(10000)
                 if (connect()) {
-                    eventSubscriptionFlow.forEach { (eventType, _) ->
-                        val response = sendMessage(
-                            mapOf(
-                                "type" to "subscribe_events",
-                                "event_type" to eventType
-                            )
-                        )
-                        lastResponseID[eventType] = response?.id
-                        if (response == null) {
-                            Log.e(TAG, "Issue re-registering event subscriptions")
-                        }
-                    }
-                    if (notificationFlow != null) {
-                        val response = sendMessage(
-                            mapOf(
-                                "type" to "mobile_app/push_notification_channel",
-                                "webhook_id" to urlRepository.getWebhookId(),
-                                "support_confirm" to true
-                            )
-                        )
-
-                        if (response == null) {
-                            Log.e(TAG, "Unable to re-register for notifications")
+                    Log.d(TAG, "Resubscribing to active subscriptions...")
+                    activeMessages.filterValues { it.eventFlow != null }.forEach { (oldId, oldMessage) ->
+                        val response = sendMessage(oldMessage)
+                        if (response == null || response.success != true) {
+                            Log.e(TAG, "Issue re-registering subscription with ${oldMessage.message}")
+                        } else {
+                            // sendMessage will have created a new item for this subscription
+                            activeMessages.remove(oldId)
                         }
                     }
                 }
@@ -432,18 +525,26 @@ class WebSocketRepositoryImpl @Inject constructor(
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
-        Log.d(TAG, "Websocket: onMessage (text)")
-        val message: SocketResponse = mapper.readValue(text)
-        Log.d(TAG, "Message number ${message.id} received: $text")
+        Log.d(TAG, "Websocket: onMessage (${if (BuildConfig.DEBUG) "text: $text" else "text"})")
+        val textTree = mapper.readTree(text)
+        val messages: List<SocketResponse> = if (textTree.isArray) {
+            textTree.elements().asSequence().toList().map { mapper.convertValue(it) }
+        } else {
+            listOf(mapper.readValue(text))
+        }
 
-        ioScope.launch {
-            when (message.type) {
-                "auth_required" -> Log.d(TAG, "Auth Requested")
-                "auth_ok" -> handleAuthComplete(true)
-                "auth_invalid" -> handleAuthComplete(false)
-                "pong", "result" -> handleMessage(message)
-                "event" -> handleEvent(message)
-                else -> Log.d(TAG, "Unknown message type: $text")
+        messages.forEach { message ->
+            Log.d(TAG, "Message number ${message.id} received")
+
+            ioScope.launch {
+                when (message.type) {
+                    "auth_required" -> Log.d(TAG, "Auth Requested")
+                    "auth_ok" -> handleAuthComplete(true, message.haVersion)
+                    "auth_invalid" -> handleAuthComplete(false, message.haVersion)
+                    "pong", "result" -> handleMessage(message)
+                    "event" -> handleEvent(message)
+                    else -> Log.d(TAG, "Unknown message type: ${message.type}")
+                }
             }
         }
     }

@@ -5,7 +5,6 @@ import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
 import android.net.ConnectivityManager
 import android.os.Bundle
 import android.os.Handler
@@ -17,6 +16,7 @@ import android.widget.Toast
 import androidx.core.content.getSystemService
 import com.google.android.material.color.DynamicColors
 import com.mikepenz.iconics.IconicsDrawable
+import com.mikepenz.iconics.typeface.library.community.material.CommunityMaterial
 import com.squareup.picasso.Picasso
 import dagger.hilt.android.AndroidEntryPoint
 import io.homeassistant.companion.android.BuildConfig
@@ -64,8 +64,6 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
         internal const val EXTRA_SHOW_SKIP = "EXTRA_INCLUDE_SKIP"
         internal const val EXTRA_SHOW_SEEK = "EXTRA_INCLUDE_SEEK"
         internal const val EXTRA_BACKGROUND_TYPE = "EXTRA_BACKGROUND_TYPE"
-
-        private var isSubscribed = false
     }
 
     @Inject
@@ -73,12 +71,6 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
 
     @Inject
     lateinit var mediaPlayCtrlWidgetDao: MediaPlayerControlsWidgetDao
-
-    override fun isSubscribed(): Boolean = isSubscribed
-
-    override fun setSubscribed(subscribed: Boolean) {
-        isSubscribed = subscribed
-    }
 
     override fun getWidgetProvider(context: Context): ComponentName =
         ComponentName(context, MediaPlayerControlsWidget::class.java)
@@ -107,7 +99,7 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
             Log.d(TAG, "Skipping widget update since network connection is not active")
             return
         }
-        mainScope.launch {
+        widgetScope?.launch {
             val views = getWidgetRemoteViews(context, appWidgetId)
             appWidgetManager.updateAppWidget(appWidgetId, views)
             onScreenOn(context)
@@ -184,7 +176,7 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
                 val artist = (entity?.attributes?.get("media_artist") ?: entity?.attributes?.get("media_album_artist"))?.toString()
                 val title = entity?.attributes?.get("media_title")?.toString()
                 val album = entity?.attributes?.get("media_album_name")?.toString()
-                var icon = entity?.attributes?.get("icon")?.toString()
+                val icon = entity?.attributes?.get("icon")?.toString()
 
                 if ((artist != null || album != null) && title != null) {
                     setTextViewText(
@@ -239,15 +231,16 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
                     )
                 }
 
-                if (icon == null || !icon.startsWith("mdi") || !icon.contains(":")) {
-                    icon = "mdi:cast"
+                var iconBitmap = IconicsDrawable(context, CommunityMaterial.Icon.cmd_cast).toBitmap()
+                if (icon?.startsWith("mdi") == true && icon.substringAfter(":").isNotBlank()) {
+                    val iconDrawable = IconicsDrawable(context, "cmd-${icon.substringAfter(":")}")
+                    if (iconDrawable.icon != null)
+                        iconBitmap = iconDrawable.toBitmap()
                 }
 
-                val iconName = icon.split(":")[1]
-                val iconDrawable: Bitmap = IconicsDrawable(context, "cmd-$iconName").toBitmap()
                 setImageViewBitmap(
                     R.id.widgetSourceIcon,
-                    iconDrawable
+                    iconBitmap
                 )
 
                 val entityPictureUrl = entity?.attributes?.get("entity_picture")?.toString()
@@ -412,9 +405,8 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
         }
     }
 
-    override suspend fun getAllWidgetIds(context: Context): List<Int> {
-        return mediaPlayCtrlWidgetDao.getAll().map { it.id }
-    }
+    override suspend fun getAllWidgetIdsWithEntities(context: Context): Map<Int, List<String>> =
+        mediaPlayCtrlWidgetDao.getAll().associate { it.id to it.entityId.split(",") }
 
     private suspend fun getEntity(context: Context, entityIds: List<String>, suggestedEntity: Entity<Map<String, Any>>?): Entity<Map<String, Any>>? {
         val entity: Entity<Map<String, Any>>?
@@ -488,7 +480,7 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
             return
         }
 
-        mainScope.launch {
+        widgetScope?.launch {
             Log.d(
                 TAG,
                 "Saving service call config data:" + System.lineSeparator() +
@@ -511,20 +503,17 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
         }
     }
 
-    override suspend fun onEntityStateChanged(context: Context, entity: Entity<*>) {
-        mediaPlayCtrlWidgetDao.getAll().forEach {
-            val entityIds = it.entityId.split(",")
-            if (entityIds.contains(entity.entityId)) {
-                mainScope.launch {
-                    val views = getWidgetRemoteViews(context, it.id, getEntity(context, entityIds, null))
-                    AppWidgetManager.getInstance(context).updateAppWidget(it.id, views)
-                }
+    override suspend fun onEntityStateChanged(context: Context, appWidgetId: Int, entity: Entity<*>) {
+        mediaPlayCtrlWidgetDao.get(appWidgetId)?.let {
+            widgetScope?.launch {
+                val views = getWidgetRemoteViews(context, appWidgetId, getEntity(context, it.entityId.split(","), null))
+                AppWidgetManager.getInstance(context).updateAppWidget(appWidgetId, views)
             }
         }
     }
 
     private fun callPreviousTrackService(context: Context, appWidgetId: Int) {
-        mainScope.launch {
+        widgetScope?.launch {
             Log.d(TAG, "Retrieving media player entity for app widget $appWidgetId")
             val entity: MediaPlayerControlsWidgetEntity? = mediaPlayCtrlWidgetDao.get(appWidgetId)
 
@@ -550,7 +539,7 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
     }
 
     private fun callRewindService(context: Context, appWidgetId: Int) {
-        mainScope.launch {
+        widgetScope?.launch {
             Log.d(TAG, "Retrieving media player entity for app widget $appWidgetId")
             val entity: MediaPlayerControlsWidgetEntity? = mediaPlayCtrlWidgetDao.get(appWidgetId)
 
@@ -595,7 +584,7 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
     }
 
     private fun callPlayPauseService(context: Context, appWidgetId: Int) {
-        mainScope.launch {
+        widgetScope?.launch {
             Log.d(TAG, "Retrieving media player entity for app widget $appWidgetId")
             val entity: MediaPlayerControlsWidgetEntity? = mediaPlayCtrlWidgetDao.get(appWidgetId)
 
@@ -621,7 +610,7 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
     }
 
     private fun callFastForwardService(context: Context, appWidgetId: Int) {
-        mainScope.launch {
+        widgetScope?.launch {
             Log.d(TAG, "Retrieving media player entity for app widget $appWidgetId")
             val entity: MediaPlayerControlsWidgetEntity? = mediaPlayCtrlWidgetDao.get(appWidgetId)
 
@@ -666,7 +655,7 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
     }
 
     private fun callNextTrackService(context: Context, appWidgetId: Int) {
-        mainScope.launch {
+        widgetScope?.launch {
             Log.d(TAG, "Retrieving media player entity for app widget $appWidgetId")
             val entity: MediaPlayerControlsWidgetEntity? = mediaPlayCtrlWidgetDao.get(appWidgetId)
 
@@ -692,7 +681,7 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
     }
 
     private fun callVolumeDownService(context: Context, appWidgetId: Int) {
-        mainScope.launch {
+        widgetScope?.launch {
             Log.d(TAG, "Retrieving media player entity for app widget $appWidgetId")
             val entity: MediaPlayerControlsWidgetEntity? = mediaPlayCtrlWidgetDao.get(appWidgetId)
 
@@ -718,7 +707,7 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
     }
 
     private fun callVolumeUpService(context: Context, appWidgetId: Int) {
-        mainScope.launch {
+        widgetScope?.launch {
             Log.d(TAG, "Retrieving media player entity for app widget $appWidgetId")
             val entity: MediaPlayerControlsWidgetEntity? = mediaPlayCtrlWidgetDao.get(appWidgetId)
 
@@ -744,18 +733,10 @@ class MediaPlayerControlsWidget : BaseWidgetProvider() {
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
-        // When the user deletes the widget, delete the preference associated with it.
-        mainScope.launch {
+        widgetScope?.launch {
             mediaPlayCtrlWidgetDao.deleteAll(appWidgetIds)
+            appWidgetIds.forEach { removeSubscription(it) }
         }
-    }
-
-    override fun onEnabled(context: Context) {
-        // Enter relevant functionality for when the first widget is created
-    }
-
-    override fun onDisabled(context: Context) {
-        // Enter relevant functionality for when the last widget is disabled
     }
 
     private fun isConnectionActive(context: Context): Boolean {

@@ -33,6 +33,7 @@ import io.homeassistant.companion.android.database.settings.WebsocketSetting
 import io.homeassistant.companion.android.notifications.MessagingManager
 import io.homeassistant.companion.android.settings.SettingsActivity
 import io.homeassistant.companion.android.webview.WebViewActivity
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -190,6 +191,7 @@ class WebsocketManager(
         val intent = WebViewActivity.newInstance(applicationContext)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         intent.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        intent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
         val pendingIntent = PendingIntent.getActivity(
             applicationContext,
             0,
@@ -201,6 +203,7 @@ class WebsocketManager(
         settingIntent.putExtra("fragment", "websocket")
         settingIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         settingIntent.addFlags(Intent.FLAG_ACTIVITY_MULTIPLE_TASK)
+        settingIntent.addFlags(Intent.FLAG_ACTIVITY_EXCLUDE_FROM_RECENTS)
         val settingPendingIntent = PendingIntent.getActivity(
             applicationContext,
             0,
@@ -224,6 +227,8 @@ class WebsocketManager(
             setForeground(ForegroundInfo(NOTIFICATION_ID, notification))
             true
         } catch (e: IllegalStateException) {
+            if (e is CancellationException) return false
+
             Log.e(TAG, "Unable to setForeground due to restrictions", e)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 if (notificationManager.getNotificationChannel(websocketIssuesChannel) == null) {

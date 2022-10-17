@@ -1,5 +1,7 @@
 package io.homeassistant.companion.android.common.data.url
 
+import android.net.wifi.WifiManager
+import android.os.Build
 import android.util.Log
 import io.homeassistant.companion.android.common.data.LocalStorage
 import io.homeassistant.companion.android.common.data.MalformedHttpUrlException
@@ -124,10 +126,26 @@ class UrlRepositoryImpl @Inject constructor(
         return localStorage.getBoolean(PREF_PRIORITIZE_INTERNAL)
     }
 
-    override suspend fun isInternal(): Boolean {
-        val formattedSsid = wifiHelper.getWifiSsid().removeSurrounding("\"")
+    override suspend fun isHomeWifiSsid(): Boolean {
+        val formattedSsid = wifiHelper.getWifiSsid()?.removeSurrounding("\"")
+        val formattedBssid = wifiHelper.getWifiBssid()
         val wifiSsids = getHomeWifiSsids()
-        val usesInternalSsid = formattedSsid in wifiSsids
+        return (
+            formattedSsid != null &&
+                (Build.VERSION.SDK_INT < Build.VERSION_CODES.R || formattedSsid !== WifiManager.UNKNOWN_SSID) &&
+                formattedSsid in wifiSsids
+            ) || (
+            formattedBssid != null &&
+                formattedBssid != UrlRepository.INVALID_BSSID &&
+                wifiSsids.any {
+                    it.startsWith(UrlRepository.BSSID_PREFIX) &&
+                        it.removePrefix(UrlRepository.BSSID_PREFIX).equals(formattedBssid, ignoreCase = true)
+                }
+            )
+    }
+
+    override suspend fun isInternal(): Boolean {
+        val usesInternalSsid = isHomeWifiSsid()
         val localUrl = localStorage.getString(PREF_LOCAL_URL)
         Log.d(TAG, "localUrl is: ${!localUrl.isNullOrBlank()} and usesInternalSsid is: $usesInternalSsid")
         return !localUrl.isNullOrBlank() && usesInternalSsid
